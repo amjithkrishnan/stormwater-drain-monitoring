@@ -1,68 +1,56 @@
 name: Deploy Lambdas and Dashboard
 
-# Runs whenever a Lambda source file or the dashboard source changes on
-# main. Lambda changes redeploy via the AWS CLI; dashboard changes get
-# rebuilt and pushed to the EC2 box via SSH.
+# Runs on every push to main. Instead of storing AWS credentials as
+# GitHub secrets (which kept breaking since AWS Academy Learner Lab
+# credentials expire every few hours), this SSHes into the EC2 box and
+# runs the deploy there, reusing whatever AWS CLI credentials are
+# already configured on the instance (~/.aws/credentials). That means
+# the only thing that needs refreshing when the Lab session rotates is
+# `aws configure` on EC2 itself - not a GitHub secret as well.
 on:
   push:
     branches: [main]
-    paths:
-      - "lambda_ingest.py"
-      - "lambda_ingest_proxy.py"
-      - "lambda_get.py"
-      - "stormwater-dashboard/**"
-      - ".github/workflows/deploy-lambdas.yml"
 
 jobs:
-  deploy-lambdas:
+  deploy:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - file: lambda_ingest.py
-            function_name: IngestStormwaterData
-          - file: lambda_ingest_proxy.py
-            function_name: IngestProxy
-          - file: lambda_get.py
-            function_name: GetStormwaterData
-
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: us-east-1
-
-      - name: Zip and deploy ${{ matrix.function_name }}
-        run: |
-          zip function.zip ${{ matrix.file }}
-          aws lambda update-function-code \
-            --function-name ${{ matrix.function_name }} \
-            --zip-file fileb://function.zip
-
-  deploy-dashboard:
-    runs-on: ubuntu-latest
-    # Only bother running this job if dashboard files actually changed,
-    # since the Lambda job's matrix already covers the Lambda files.
-    if: contains(github.event.head_commit.modified, 'stormwater-dashboard') || contains(github.event.head_commit.added, 'stormwater-dashboard')
-    steps:
-      - name: Build and deploy dashboard on EC2 over SSH
+      - name: Pull latest code and redeploy on EC2 over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -e
             cd ~/stormwater-project
             git pull origin main
+
+            echo "--- Deploying Lambda functions ---"
+            zip -j function-ingest.zip lambda_ingest.py
+            aws lambda update-function-code \
+              --function-name IngestStormwaterData \
+              --zip-file fileb://function-ingest.zip \
+              --region us-east-1
+
+            zip -j function-proxy.zip lambda_ingest_proxy.py
+            aws lambda update-function-code \
+              --function-name IngestProxy \
+              --zip-file fileb://function-proxy.zip \
+              --region us-east-1
+
+            zip -j function-get.zip lambda_get.py
+            aws lambda update-function-code \
+              --function-name GetStormwaterData \
+              --zip-file fileb://function-get.zip \
+              --region us-east-1
+
+            echo "--- Rebuilding and deploying dashboard ---"
             cd stormwater-dashboard
             npm install
             npm run build
             sudo cp -r dist/* /var/www/html/
             sudo systemctl restart nginx
+
+            echo "--- Deploy complete ---"
 
