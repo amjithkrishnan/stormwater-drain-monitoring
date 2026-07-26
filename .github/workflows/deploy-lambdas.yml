@@ -1,0 +1,45 @@
+name: Deploy Lambda Functions
+
+# Runs whenever a Lambda source file changes on main, so the three
+# functions stay in sync with the repo without me manually re-zipping
+# and re-uploading through the CLI every time.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lambda_ingest.py"
+      - "lambda_ingest_proxy.py"
+      - "lambda_get.py"
+      - ".github/workflows/deploy-lambdas.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - file: lambda_ingest.py
+            function_name: IngestStormwaterData
+          - file: lambda_ingest_proxy.py
+            function_name: IngestProxy
+          - file: lambda_get.py
+            function_name: GetStormwaterData
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Zip and deploy ${{ matrix.function_name }}
+        run: |
+          zip function.zip ${{ matrix.file }}
+          aws lambda update-function-code \
+            --function-name ${{ matrix.function_name }} \
+            --zip-file fileb://function.zip

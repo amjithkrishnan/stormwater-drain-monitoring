@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+stormwater-dashboard/node_modules/
+stormwater-dashboard/dist/
+*.zip
+.DS_Store
