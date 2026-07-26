@@ -258,7 +258,7 @@ export default function StormwaterDashboard() {
           </div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 0.2 }}>Stormwater Drain Network</div>
-            <div style={{ fontSize: 12.5, color: "#5C7A99" }}>Fog-layer risk scoring &middot; cloud-aggregated history !!</div>
+            <div style={{ fontSize: 12.5, color: "#5C7A99" }}>Fog-layer risk scoring &middot; cloud-aggregated history !</div>
           </div>
         </div>
 
