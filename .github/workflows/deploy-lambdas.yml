@@ -1,8 +1,8 @@
-name: Deploy Lambda Functions
+name: Deploy Lambdas and Dashboard
 
-# Runs whenever a Lambda source file changes on main, so the three
-# functions stay in sync with the repo without me manually re-zipping
-# and re-uploading through the CLI every time.
+# Runs whenever a Lambda source file or the dashboard source changes on
+# main. Lambda changes redeploy via the AWS CLI; dashboard changes get
+# rebuilt and pushed to the EC2 box via SSH.
 on:
   push:
     branches: [main]
@@ -10,10 +10,11 @@ on:
       - "lambda_ingest.py"
       - "lambda_ingest_proxy.py"
       - "lambda_get.py"
+      - "stormwater-dashboard/**"
       - ".github/workflows/deploy-lambdas.yml"
 
 jobs:
-  deploy:
+  deploy-lambdas:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -43,3 +44,25 @@ jobs:
           aws lambda update-function-code \
             --function-name ${{ matrix.function_name }} \
             --zip-file fileb://function.zip
+
+  deploy-dashboard:
+    runs-on: ubuntu-latest
+    # Only bother running this job if dashboard files actually changed,
+    # since the Lambda job's matrix already covers the Lambda files.
+    if: contains(github.event.head_commit.modified, 'stormwater-dashboard') || contains(github.event.head_commit.added, 'stormwater-dashboard')
+    steps:
+      - name: Build and deploy dashboard on EC2 over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/stormwater-project
+            git pull origin main
+            cd stormwater-dashboard
+            npm install
+            npm run build
+            sudo cp -r dist/* /var/www/html/
+            sudo systemctl restart nginx
+
